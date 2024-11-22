@@ -1,0 +1,7 @@
+scapy
+dnspython
+PyQt5
+pandas
+flask
+psutil
+requests

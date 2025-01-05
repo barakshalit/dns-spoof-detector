@@ -4,7 +4,7 @@
 apt-get update && apt-get install -y dnsmasq
 
 # Add DNS entry for google.com to resolve to 1.1.1.1
-echo 'address=/www.wikipedia.org/7.7.7.7' >> /etc/dnsmasq.conf
+echo 'address=/wikipedia.org/7.7.7.7' >> /etc/dnsmasq.conf
 
 # Set dnsmasq to forward other queries to Google's public DNS (8.8.8.8)
 echo 'server=8.8.8.8' >> /etc/dnsmasq.conf

@@ -4,155 +4,164 @@ from datetime import datetime
 import signal
 import sys
 import os
+import requests
 
 class DNSMonitor:
     def __init__(self, interface="eth0"):
         self.interface = interface
         self.process = None
         signal.signal(signal.SIGINT, self.signal_handler)
-        
+
     def signal_handler(self, signum, frame):
         print("\nStopping DNS monitoring...")
         if self.process:
             self.process.terminate()
         sys.exit(0)
-        
-    def get_ip_from_nslookup(self, url):
+
+    def get_nslookup_address(self, domain):
         try:
-            # Run nslookup against the local dnsmasq server (127.0.0.1)
-            result = subprocess.run(['nslookup', url, '127.0.0.1'], capture_output=True, text=True)
+            # Run the nslookup command for the specified domain
+            result = subprocess.run(['nslookup', domain], capture_output=True, text=True)
             
-            # Parse the output of nslookup to extract the IP address under the 'Name' section
-            ip_address = None
-            in_address_section = False  # Flag to start capturing 'Name' section
+            # Check if the command succeeded
+            if result.returncode != 0:
+                print(f"nslookup failed with error: {result.stderr}")
+                return None
+
+            # Extract the actual resolved IP address (skip resolver address)
+            address = None
             for line in result.stdout.splitlines():
-                if "Name:" in line:
-                    in_address_section = True  # Start capturing addresses
-                if in_address_section and "Address:" in line:
-                    ip_address = line.split(':')[-1].strip()  # Extract IP address
-                    break  # Exit after the first found address
-            
-            return ip_address
-            
+                line = line.strip()
+                if line.startswith('Address:') and '#' not in line:  # Exclude lines with '#'
+                    address = line.split(':')[-1].strip()  # Get the part after 'Address:'
+                    break
+
+            return address
         except Exception as e:
-            print(f"Error during nslookup: {e}")
+            print(f"Error running nslookup: {e}")
             return None
 
     def parse_dns_query(self, line):
         try:
-            # Print raw line for debugging
-            print(f"Raw line: {line}")
-            
-            # More comprehensive regex patterns to match different DNS query types
-            query_patterns = [
-                r'\d+\+\s*(\w+)\?\s*([a-zA-Z0-9.-]+)\s*\(',  # Match Type65 and other types, and the domain
-                r'A\? ([\w.-]+)',  # Standard A record query
-                r'AAAA\? ([\w.-]+)',  # IPv6 query
-                r' ([a-zA-Z0-9.-]+)\. A\? ',  # Alternative A record format
-                r'([a-zA-Z0-9.-]+) IN A'  # Another common format
-            ]
-            
-            ip_patterns = [
-                r'A ([\d.]+)',  # IPv4 response
-                r'AAAA ([0-9a-f:]+)',  # IPv6 response
-                r' ([\d.]+) A '  # Alternative IPv4 format
-            ]
-            
-            domain = None
-            # Try different query patterns to find the domain
-            for pattern in query_patterns:
-                match = re.search(pattern, line)
-                if match:
-                    domain = match.group(2)  # The second group should be the domain
-                    print(f"Found domain: {domain}")
-                    break
-            
-            # If no domain is found, return early to avoid further errors
+            # Extract domain from DNS query
+            domain_match = re.search(r"\b[\w.-]+\.(?:com|co\.il|org)\b", line)
+            domain = domain_match.group(0) if domain_match else None
+            print("DEBUG: ", domain)
+            # Extract IP address from DNS response
+            ip = self.get_nslookup_address(domain)
+
             if not domain:
-                print("No valid domain found in the query.")
-                return None, None
-            
-            ip = None
-            # Try different IP patterns
-            for pattern in ip_patterns:
-                match = re.search(pattern, line)
-                if match:
-                    ip = match.group(1)
-                    print(f"Found IP: {ip}")
-                    break
-            
-            # Return the domain and IP
-            return domain, ip
-        
+                domain = "Unknown domain"
+            if not ip:
+                ip = "Unknown IP"
+            # Return the parsed domain and IP
+            return domain , ip
+
         except Exception as e:
             print(f"Error parsing line: {e}")
-        return None, None
+            print("-" * 50)
+            return None , None
 
+    def parse_response(self, response, api):
+        if response.status_code == 200:
+            # Parse the response to JSON
+            try:
+                data = response.json()
+                if api == "google":
+                    ip_from_API = data["Answer"]
+                    for answer in ip_from_API:
+                        ip_from_API = answer["data"]
+                elif api == "network_calc":
+                    ip_from_API = data["records"]["A"][0]["address"]
+                elif api == "whois":
+                    ip_from_API = data["dnsRecords"][0]["address"]
+
+                # Search for a specific field
+                
+                if ip_from_API:
+                    return ip_from_API
+                else:
+                    print("Field not found in the response.")
+            except ValueError as e:
+                print("Failed to parse JSON:", e)
+
+        else:
+            print(f"Request failed with status code {response.status_code}")
+
+    def validate_ip(self,domain, ip_from_nslookup):
+        try:
+            whois_API_key="10733bc54c464990a4d777fd6687c66e"
+            IPapi_API_key = "36371fec54d5432c212a36cdb74bb65d"
+            dns_google_IP = "8.8.8.8" # dns.google
+            whois_IP = "172.233.38.212" #api.whoisfreaks.com
+            network_calc_IP = "134.209.130.15" #networkcalc.com
+            # answers from apis
+            answers = []
+            google_dns = requests.get(f"https://{dns_google_IP}/resolve?name={domain}")
+            who_is = requests.get(f"https://{whois_IP}/v2.0/dns/live?apiKey={whois_API_key}&domainName={domain}&type=all",verify=False)
+            network_calc = requests.get(f"https://{network_calc_IP}/api/dns/lookup/{domain}",verify=False)
+            answers.append(self.parse_response(google_dns, "google"))
+            answers.append(self.parse_response(network_calc, "network_calc"))
+            answers.append(self.parse_response(who_is, "whois"))
+
+        except Exception as e:
+            print(f"Error parsing line: {e}")
+            print("-" * 50)
+            return None , None
+            
+        return answers
+
+   
     def start_monitoring(self):
         try:
-            # Modified tcpdump command for more verbose output
             cmd = f"tcpdump -i {self.interface} -n -l -vv 'udp port 53'"
             print(f"Running command: {cmd}")
-            
+
             # Start tcpdump with sudo if not root
             if os.geteuid() != 0:
                 cmd = f"sudo {cmd}"
-            
+
             self.process = subprocess.Popen(
                 cmd,
                 shell=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 universal_newlines=True,
-                bufsize=1  # Line buffered
+                bufsize=1,  # Line-buffered
             )
-            
-            # Check for tcpdump errors
-            stderr_line = self.process.stderr.readline()
-            if stderr_line:
-                print(f"tcpdump stderr: {stderr_line}")
-            
+        
             print(f"Starting DNS monitoring on interface {self.interface}...")
             print("Press Ctrl+C to stop monitoring\n")
-            
+
             while True:
                 line = self.process.stdout.readline()
                 if not line:
                     break
-                    
-                domain = self.parse_dns_query(line)
-                if domain:
-                    # Only print the requested URL and its resolved IP
-                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    print(f"\nRequested URL: {domain}")
-                    
-                    # Get IP from nslookup
-                    ip_address = self.get_ip_from_nslookup(domain)
-                    if ip_address:
-                        print(f"IP from nslookup: {ip_address}")
-                    else:
-                        print(f"IP not found for {domain}")
-                    
-                    print("-" * 50)
-                    
-                    # Log to file
-                    with open("dns_queries.log", "a") as f:
-                        f.write(f"[{timestamp}] {domain} -> {ip_address if ip_address else 'No IP'}\n")
-                    
+
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                log = f"{timestamp} - Raw line from tcpdump: {line}\n"
+                domain, ip = self.parse_dns_query(line)  
+                log = log + f"Found domain: {domain}\n"    
+                log = log + f"Found IP: {ip}\n"   
+                self.validate_ip(domain, ip)
+                print(log) 
+                print("-" * 50)
+
+                #Log to file
+                with open("dns_queries.log", "a") as f:
+                    f.write(f"{log}\n")
+
         except Exception as e:
             print(f"Error: {e}")
-            import traceback
-            traceback.print_exc()
         finally:
             if self.process:
                 self.process.terminate()
 
 if __name__ == "__main__":
-    # Check if running as root
     if os.geteuid() != 0:
         print("This script requires root privileges to run tcpdump.")
         print("Please run with sudo: sudo python3 dns_monitor.py")
         sys.exit(1)
-        
+
     monitor = DNSMonitor()
     monitor.start_monitoring()

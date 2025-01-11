@@ -107,6 +107,9 @@ RUN chmod +x /root/Desktop/setup_dns.sh
 COPY service/my_http_listener.py /usr/local/bin/my_http_listener.py
 RUN chmod +x /usr/local/bin/my_http_listener.py
 
+#copy slert site html:
+COPY alert.html /usr/local/bin/alert.html
+
 # Copy script to run app
 COPY service/run_python.sh /root/Desktop/run_python.sh
 

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DNS Spoofing Alert</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Roboto', sans-serif;
+            background: linear-gradient(145deg, #1c0038, #320060);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        .alert-container {
+            text-align: center;
+            border: 1px solid #82009d;
+            border-radius: 15px;
+            padding: 20px;
+            background: rgba(20, 0, 40, 0.8);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.6);
+        }
+
+        .alert-container h1 {
+            font-size: 2rem;
+            color: #e000ff;
+        }
+
+        .alert-container p {
+            font-size: 1.2rem;
+            line-height: 1.5;
+            margin: 10px 0;
+        }
+
+        .alert-container a {
+            color: #00e4ff;
+            text-decoration: none;
+            font-weight: bold;
+            transition: color 0.3s;
+        }
+
+        .alert-container a:hover {
+            color: #ff6cfb;
+        }
+
+        .highlight {
+            color: #ff007a;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="alert-container">
+        <h1>⚠️ DNS Spoofing Attack Alert ⚠️</h1>
+        <p>
+            You are under a <span class="highlight">DNS spoofing attack</span>. 
+            <span class="highlight">dns-spoofer-tool</span> blocked a malicious site you were trying to enter: 
+            <span class="highlight">{domain}</span>.
+        </p>
+        <p>
+            Please read <a href="https://www.imperva.com/learn/application-security/dns-spoofing/" target="_blank">here</a> about the attack and how to handle it.
+        </p>
+    </div>
+</body>
+</html>

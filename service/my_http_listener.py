@@ -34,7 +34,6 @@ class DNSMonitor:
         sys.exit(0)
 
 
-        
     def get_nslookup_address(self, domain):
         try:
             if domain:
@@ -161,16 +160,16 @@ class DNSMonitor:
             ]
             isp_from_nslookup =  self.make_request_with_retries(f"http://{IP_API_IP}/json/{ip_from_nslookup}").json()["isp"]
             
-            if isp_from_nslookup not in isp_from_apis:
-                self.open_html_file(domain)
-                return "NOT VALID"
+            if isp_from_nslookup in isp_from_apis:
+                self.trusted_domains.append(domain)
+                return "VALID (isp match)"
           
 
         except Exception as e:
             return f"Error validating with exception: {e}"
 
-        self.trusted_domains.append(domain)
-        return "VALID"
+        self.open_html_file(domain)
+        return "INVALID"
 
 
 
@@ -202,7 +201,7 @@ class DNSMonitor:
                     raise Exception("Failed to fetch data after retries.")
                 
             url_index = (url_index + 1) % len(available_request_url) # iterating over next request url
-
+        
         return False, ip_from_apis
 
     def make_request_with_retries(self, url, retries=4):
@@ -212,7 +211,7 @@ class DNSMonitor:
                     return response
                 else:                 # Too many requests
                     wait_time = 2 ** i  # Exponential backoff
-                    time.sleep(wait_time)
+                    time.sleep(1)
             raise Exception("Failed to fetch data after retries.")
 
     def process_lines(self):

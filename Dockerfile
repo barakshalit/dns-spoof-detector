@@ -103,6 +103,11 @@ EXPOSE 8080 53/udp 53/tcp
 COPY dnsmasq/setup_dns.sh /root/Desktop/setup_dns.sh
 RUN chmod +x /root/Desktop/setup_dns.sh
 
+# Add the firefox telemetry disabler script to the container and run it
+COPY dnsmasq/firefox_telemetry_disable.sh /root/Desktop/firefox_telemetry_disable.sh
+RUN chmod +x /root/Desktop/firefox_telemetry_disable.sh
+
+
 # copy app
 COPY service/my_http_listener.py /usr/local/bin/my_http_listener.py
 RUN chmod +x /usr/local/bin/my_http_listener.py

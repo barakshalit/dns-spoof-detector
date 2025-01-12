@@ -34,28 +34,6 @@ class DNSMonitor:
         sys.exit(0)
 
 
-    def get_nslookup_address(self, domain):
-        try:
-            # Run the nslookup command for the specified domain
-            result = subprocess.run(['nslookup', domain], capture_output=True, text=True)
-            
-            # Check if the command succeeded
-            if result.returncode != 0:
-                print(f"nslookup failed with error: {result.stderr}")
-                return None
-
-            # Extract the actual resolved IP address (skip resolver address)
-            address = None
-            for line in result.stdout.splitlines():
-                line = line.strip()
-                if line.startswith('Address:') and '#' not in line:  # Exclude lines with '#'
-                    address = line.split(':')[-1].strip()  # Get the part after 'Address:'
-                    break
-
-            return address
-        except Exception as e:
-            print(f"Error running nslookup: {e}")
-            return None
         
     def get_nslookup_address(self, domain):
         try:
@@ -65,7 +43,8 @@ class DNSMonitor:
                 
                 # Check if the command succeeded
                 if result.returncode != 0:
-                    print(f"nslookup failed with error: {result.stderr} for domain {domain}")
+                    if (self.verbose_logs):
+                        print(f"nslookup failed with error: {result.stderr} for domain {domain}")
                     return None
 
                 # Extract the actual resolved IP address (skip resolver address)
@@ -84,6 +63,26 @@ class DNSMonitor:
         except Exception as e:
             print(f"Error running nslookup: {e}")
             return None
+
+    def open_html_file(self, malicious_domain):
+        # Check if the file exists
+        if os.path.exists(self.info_site_html_path):
+            # Read the HTML file and update it
+            with open(self.info_site_html_path, "r") as file:
+                html_content = file.read()
+
+            updated_html = html_content.replace("{domain}", malicious_domain)
+
+            # Save the updated HTML to a new file (or overwrite the original)
+            temp_html_path = os.path.join(os.path.dirname(self.info_site_html_path), "updated_site.html")
+            with open(temp_html_path, "w") as file:
+                file.write(updated_html)
+
+            # Open the updated HTML file in the default browser
+            webbrowser.open(f'file://{os.path.abspath(temp_html_path)}')
+            print(f"Opening {temp_html_path} in the default browser...")
+        else:
+            print(f"Error: {self.info_site_html_path} does not exist.")
 
 
     def parse_dns_query(self, line):
@@ -134,39 +133,31 @@ class DNSMonitor:
     def validate_ip(self, domain, ip_from_nslookup):
         try:
             if domain in self.trusted_domains: # checking cache for trusted domains
-                return "VALID"
+                return "VALID (cached)"
             dns_google_IP = "8.8.8.8" # dns.google
             network_calc_IP = "134.209.130.15" #networkcalc.com
             IP_API_IP = "208.95.112.1" #ip-api.com
 
             # google dns api validation
+            available_request_url=[]
+            api_order_list = ["google", "network_calc", "IP_API"]
             google_dns_request_url = f"https://{dns_google_IP}/resolve?name={domain}"
-            google_dns_response = self.make_request_with_retries(google_dns_request_url)
-            google_api_respone_ip = self.parse_response(google_dns_response, "google")
-            if ip_from_nslookup == google_api_respone_ip:
-                self.trusted_domains.append(domain)
-                return "VALID"
-
-            # networkcalc api validation
             network_calc_request_url = f"https://{network_calc_IP}/api/dns/lookup/{domain}"
-            network_calc_response = self.make_request_with_retries(network_calc_request_url)
-            network_calc_response_ip = self.parse_response(network_calc_response, "network_calc")
-            if ip_from_nslookup == network_calc_response_ip:
-                self.trusted_domains.append(domain)
-                return "VALID"
-            
-            # ip-api api validation
             IP_API_request_url = f"http://{IP_API_IP}/json/{domain}"
-            IP_API_response = self.make_request_with_retries(IP_API_request_url)
-            IP_API_response_ip = self.parse_response(IP_API_response, "IP_API")
-            if ip_from_nslookup == network_calc_response_ip:
+            available_request_url.append(google_dns_request_url)
+            available_request_url.append(network_calc_request_url)
+            available_request_url.append(IP_API_request_url)
+
+            valid, ip_from_apis = self.validate_against_apis(available_request_url, api_order_list, ip_from_nslookup, retries=3)
+
+            if valid:
                 self.trusted_domains.append(domain)
                 return "VALID"
 
             # ip is not in api's answer - check if the ip comes from cdn
             isp_from_apis = [
                 self.make_request_with_retries(f"http://{IP_API_IP}/json/{ip}").json()["isp"] 
-                for ip in [google_api_respone_ip, network_calc_response_ip, IP_API_response_ip]
+                for ip in ip_from_apis
             ]
             isp_from_nslookup =  self.make_request_with_retries(f"http://{IP_API_IP}/json/{ip_from_nslookup}").json()["isp"]
             
@@ -183,37 +174,46 @@ class DNSMonitor:
 
 
 
-    def open_html_file(self, malicious_domain):
-        # Check if the file exists
-        if os.path.exists(self.info_site_html_path):
-            # Read the HTML file and update it
-            with open(self.info_site_html_path, "r") as file:
-                html_content = file.read()
 
-            updated_html = html_content.replace("{domain}", malicious_domain)
+    def validate_against_apis(self, available_request_url, api_order_list, ip_from_nslookup, retries=3) -> bool:
+        retries_for_apis = [0,0,0]
+        request_sent = [False, False, False]
+        url_index = 0
+        ip_from_apis = []
+        # not all url request was fullfiled
+        while False in request_sent:
+            if not request_sent[url_index]: # there are still awaiting requests
+                if retries_for_apis[url_index] <= retries: # we haven't used all retries
+                    wait_time = 2 ** retries_for_apis[url_index]  # Exponential backoff
+                    retries_for_apis[url_index] += 1
+                    time.sleep(1)
+                    response = requests.get(available_request_url[url_index], verify=False)
+                    if response.status_code == 200:
+                        ip_from_api = self.parse_response(response, api_order_list[url_index])
+                        ip_from_apis.append(ip_from_api)
+                        if ip_from_nslookup == ip_from_api:
+                            return True, ip_from_apis
+                        else:
+                            request_sent[url_index] = True
+                    elif response.status_code != 429:                 
+                        raise Exception(f"Error code {response.status_code} from request {available_request_url[url_index]}")
 
-            # Save the updated HTML to a new file (or overwrite the original)
-            temp_html_path = os.path.join(os.path.dirname(self.info_site_html_path), "updated_site.html")
-            with open(temp_html_path, "w") as file:
-                file.write(updated_html)
+                else:
+                    raise Exception("Failed to fetch data after retries.")
+                
+            url_index = (url_index + 1) % len(available_request_url) # iterating over next request url
 
-            # Open the updated HTML file in the default browser
-            webbrowser.open(f'file://{os.path.abspath(temp_html_path)}')
-            print(f"Opening {temp_html_path} in the default browser...")
-        else:
-            print(f"Error: {self.info_site_html_path} does not exist.")
-
+        return False, ip_from_apis
 
     def make_request_with_retries(self, url, retries=4):
-        for i in range(retries):
-            response = requests.get(url, verify=False)
-            if response.status_code == 200:
-                return response
-            else:                 # Too many requests
-                wait_time = 2 ** i  # Exponential backoff
-                time.sleep(wait_time)
-        raise Exception("Failed to fetch data after retries.")
-    
+            for i in range(retries):
+                response = requests.get(url, verify=False)
+                if response.status_code == 200:
+                    return response
+                else:                 # Too many requests
+                    wait_time = 2 ** i  # Exponential backoff
+                    time.sleep(wait_time)
+            raise Exception("Failed to fetch data after retries.")
 
     def process_lines(self):
         while not self.stop_event.is_set():
@@ -274,6 +274,7 @@ class DNSMonitor:
             if self.process:
                 self.process.terminate()
 
+# Entry point of the project
 def main(verbose_logs_input):
     if os.geteuid() != 0:
         print("This script requires root privileges to run tcpdump.")

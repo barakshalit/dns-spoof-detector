@@ -23,7 +23,7 @@ class DNSMonitor:
         self.stop_event = threading.Event()
         self.verbose_logs = verbose_logs_input
         self.info_site_html_path = "/usr/local/bin/alert.html"
-        self.trusted_domains = []
+        self.trusted_domains = {}
         signal.signal(signal.SIGINT, self.signal_handler)
 
 
@@ -94,9 +94,9 @@ class DNSMonitor:
             ip = self.get_nslookup_address(domain)
 
             if not domain:
-                domain = "Unknown domain"
+                domain = False
             if not ip:
-                ip = "Unknown IP"
+                ip = False
             # Return the parsed domain and IP
             return domain , ip
 
@@ -131,8 +131,9 @@ class DNSMonitor:
 
     def validate_ip(self, domain, ip_from_nslookup):
         try:
-            if domain in self.trusted_domains: # checking cache for trusted domains
+            if domain in self.trusted_domains and ip_from_nslookup == self.trusted_domains[domain]: # checking cache for trusted domains
                 return "VALID (cached)"
+            
             dns_google_IP = "8.8.8.8" # dns.google
             network_calc_IP = "134.209.130.15" #networkcalc.com
             IP_API_IP = "208.95.112.1" #ip-api.com
@@ -147,21 +148,39 @@ class DNSMonitor:
             available_request_url.append(network_calc_request_url)
             available_request_url.append(IP_API_request_url)
 
-            valid, ip_from_apis = self.validate_against_apis(available_request_url, api_order_list, ip_from_nslookup, retries=3)
+            valid = self.validate_against_apis(available_request_url, api_order_list, ip_from_nslookup, retries=3)
 
             if valid:
-                self.trusted_domains.append(domain)
+                self.trusted_domains[domain] = ip_from_nslookup
                 return "VALID"
 
-            # ip is not in api's answer - check if the ip comes from cdn
-            isp_from_apis = [
-                self.make_request_with_retries(f"http://{IP_API_IP}/json/{ip}").json()["isp"] 
-                for ip in ip_from_apis
-            ]
+            # ip isn't valid - check if the ip comes from cdn
             isp_from_nslookup =  self.make_request_with_retries(f"http://{IP_API_IP}/json/{ip_from_nslookup}").json()["isp"]
+
+            google_dns_request_url = f"https://{dns_google_IP}/resolve?name={domain}"
+            google_dns_response = self.make_request_with_retries(google_dns_request_url)
+            google_api_respone_ip = self.parse_response(google_dns_response, "google")
+            isp_from_google = self.make_request_with_retries(f"http://{IP_API_IP}/json/{google_api_respone_ip}").json()["isp"]
+
+            if isp_from_nslookup == isp_from_google:
+                self.trusted_domains[domain] = ip_from_nslookup
+                return "VALID (isp match)"
             
-            if isp_from_nslookup in isp_from_apis:
-                self.trusted_domains.append(domain)
+            network_calc_request_url = f"https://{network_calc_IP}/api/dns/lookup/{domain}"
+            network_calc_response = self.make_request_with_retries(network_calc_request_url)
+            network_calc_response_ip = self.parse_response(network_calc_response, "network_calc")
+            isp_from_network_calc = self.make_request_with_retries(f"http://{IP_API_IP}/json/{network_calc_response_ip}").json()["isp"]
+            if isp_from_nslookup == isp_from_network_calc:
+                self.trusted_domains[domain] = ip_from_nslookup
+                return "VALID (isp match)"
+
+            IP_API_request_url = f"http://{IP_API_IP}/json/{domain}"
+            IP_API_response = self.make_request_with_retries(IP_API_request_url)
+            IP_API_response_ip = self.parse_response(IP_API_response, "IP_API")
+
+            isp_from_ip_api = self.make_request_with_retries(f"http://{IP_API_IP}/json/{IP_API_response_ip}").json()["isp"]
+            if isp_from_nslookup == isp_from_ip_api:
+                self.trusted_domains[domain] = ip_from_nslookup
                 return "VALID (isp match)"
           
 
@@ -202,7 +221,7 @@ class DNSMonitor:
                 
             url_index = (url_index + 1) % len(available_request_url) # iterating over next request url
         
-        return False, ip_from_apis
+        return False
 
     def make_request_with_retries(self, url, retries=4):
             for i in range(retries):
@@ -221,14 +240,15 @@ class DNSMonitor:
                 if line:
                     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     domain, ip = self.parse_dns_query(line)
-                    if ("Unknown" in domain or "Unknown" in ip) and not self.verbose_logs:
+                    if (not domain or not ip) and not self.verbose_logs:
                         continue
                     
                     log = ("-" * 50) + "\n"
-                    log += f"{timestamp} - Raw line from tcpdump: {line.strip()}\n"
+                    log += f"{timestamp}\n"
+                    log += f"Raw line from tcpdump: {line.strip()}\n"
                     log += f"Found domain: {domain}\n"
                     log += f"Found IP: {ip}\n"
-                    if ("Unknown" not in domain) and ("Unknown" not in ip):
+                    if domain and ip:
                         log += f"Validation from API: {self.validate_ip(domain, ip)}\n"
 
                     print(log)

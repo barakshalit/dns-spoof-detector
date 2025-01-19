@@ -1,1 +1,1 @@
-sudo python3 /usr/local/bin/my_http_listener.py
+sudo python3 /usr/local/bin/dns-spoof-detector.py

@@ -109,8 +109,8 @@ RUN chmod +x /root/Desktop/firefox_telemetry_disable.sh
 
 
 # copy app
-COPY service/my_http_listener.py /usr/local/bin/my_http_listener.py
-RUN chmod +x /usr/local/bin/my_http_listener.py
+COPY service/dns-spoof-detector.py /usr/local/bin/dns-spoof-detector.py
+RUN chmod +x /usr/local/bin/dns-spoof-detector.py
 
 #copy slert site html:
 COPY alert.html /usr/local/bin/alert.html

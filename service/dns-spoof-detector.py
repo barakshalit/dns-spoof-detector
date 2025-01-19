@@ -11,10 +11,11 @@ import urllib3
 import time
 import argparse
 import webbrowser
-from time import sleep
+import time
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-class DNSMonitor:
+class DNSSpoofDetector:
 
     def __init__(self, verbose_logs_input=False, interface="eth0"):
         self.interface = interface
@@ -34,6 +35,7 @@ class DNSMonitor:
         sys.exit(0)
 
 
+    # Perform nslookup for the specified domain for ip adress from local DNS resolver
     def get_nslookup_address(self, domain):
         try:
             if domain:
@@ -63,6 +65,8 @@ class DNSMonitor:
             print(f"Error running nslookup: {e}")
             return None
 
+
+    # Open the HTML file in the default browser
     def open_html_file(self, malicious_domain):
         # Check if the file exists
         if os.path.exists(self.info_site_html_path):
@@ -84,6 +88,7 @@ class DNSMonitor:
             print(f"Error: {self.info_site_html_path} does not exist.")
 
 
+    # Parse the DNS query from the tcpdump line for domain name and ip address
     def parse_dns_query(self, line):
         try:
             # Extract domain from DNS query
@@ -105,6 +110,8 @@ class DNSMonitor:
             print("-" * 50)
             return None , None
 
+
+    # Parse the response from the API
     def parse_response(self, response, api):
         if response.status_code == 200:
             # Parse the response to JSON
@@ -129,6 +136,8 @@ class DNSMonitor:
         else:
             print(f"Request failed with status code {response.status_code}")
 
+
+    # Validate the IP address from the DNS query against multiple APIs
     def validate_ip(self, domain, ip_from_nslookup):
         try:
             if domain in self.trusted_domains and ip_from_nslookup == self.trusted_domains[domain]: # checking cache for trusted domains
@@ -138,7 +147,7 @@ class DNSMonitor:
             network_calc_IP = "134.209.130.15" #networkcalc.com
             IP_API_IP = "208.95.112.1" #ip-api.com
 
-            # google dns api validation
+            # Setting up the request urls for the APIs
             available_request_url=[]
             api_order_list = ["google", "network_calc", "IP_API"]
             google_dns_request_url = f"https://{dns_google_IP}/resolve?name={domain}"
@@ -191,26 +200,21 @@ class DNSMonitor:
         return "INVALID"
 
 
-
-
+    # Validate the IP address from the DNS query against multiple APIs, performing cyclic retries to enhance performance
     def validate_against_apis(self, available_request_url, api_order_list, ip_from_nslookup, retries=3) -> bool:
         retries_for_apis = [0,0,0]
         request_sent = [False, False, False]
         url_index = 0
-        ip_from_apis = []
         # not all url request was fullfiled
         while False in request_sent:
-            if not request_sent[url_index]: # there are still awaiting requests
-                if retries_for_apis[url_index] <= retries: # we haven't used all retries
-                    wait_time = 2 ** retries_for_apis[url_index]  # Exponential backoff
+            if not request_sent[url_index]: # current API still didn't send request
+                if retries_for_apis[url_index] <= retries: # we haven't used all retries for current API
                     retries_for_apis[url_index] += 1
-                    time.sleep(1)
                     response = requests.get(available_request_url[url_index], verify=False)
                     if response.status_code == 200:
                         ip_from_api = self.parse_response(response, api_order_list[url_index])
-                        ip_from_apis.append(ip_from_api)
                         if ip_from_nslookup == ip_from_api:
-                            return True, ip_from_apis
+                            return True
                         else:
                             request_sent[url_index] = True
                     elif response.status_code != 429:                 
@@ -223,22 +227,26 @@ class DNSMonitor:
         
         return False
 
+
+    # Make a request with retries
     def make_request_with_retries(self, url, retries=4):
             for i in range(retries):
                 response = requests.get(url, verify=False)
                 if response.status_code == 200:
                     return response
                 else:                 # Too many requests
-                    wait_time = 2 ** i  # Exponential backoff
                     time.sleep(1)
             raise Exception("Failed to fetch data after retries.")
 
+
+    # Process lines from tcpdump
     def process_lines(self):
         while not self.stop_event.is_set():
             try:
                 line = self.queue.get(timeout=0.5)
                 if line:
                     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    # Parse the DNS query from the tcpdump line for domain name and ip address
                     domain, ip = self.parse_dns_query(line)
                     if (not domain or not ip) and not self.verbose_logs:
                         continue
@@ -257,8 +265,11 @@ class DNSMonitor:
             except queue.Empty:
                 continue
 
+
+    # Start monitoring DNS queries
     def start_monitoring(self):
         try:
+            # Run tcpdump command to capture DNS queries
             cmd = f"tcpdump -i {self.interface} -n -l -vv 'udp port 53'"
             print(f"Running command: {cmd}")
 
@@ -293,17 +304,19 @@ class DNSMonitor:
             if self.process:
                 self.process.terminate()
 
-# Entry point of the project
+
 def main(verbose_logs_input):
+    # Check if the script is running as root
     if os.geteuid() != 0:
         print("This script requires root privileges to run tcpdump.")
         print("Please run with sudo: sudo python3 dns_monitor.py")
         sys.exit(1)
 
-    monitor = DNSMonitor(verbose_logs_input)
-    monitor.start_monitoring()
+    detector = DNSSpoofDetector(verbose_logs_input)
+    detector.start_monitoring()
 
 
+# Entry point of the project
 if __name__ == "__main__":
 
     # Set up argument parser

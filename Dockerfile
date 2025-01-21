@@ -109,8 +109,11 @@ RUN chmod +x /root/Desktop/firefox_telemetry_disable.sh
 
 
 # copy app
-COPY service/dns-spoof-detector.py /usr/local/bin/dns-spoof-detector.py
-RUN chmod +x /usr/local/bin/dns-spoof-detector.py
+COPY service/dns_spoof_detector.py /usr/local/bin/dns_spoof_detector.py
+RUN chmod +x /usr/local/bin/dns_spoof_detector.py
+
+# Copy app2
+COPY service/ip_status_app.py /usr/local/bin/ip_status_app.py
 
 #copy slert site html:
 COPY alert.html /usr/local/bin/alert.html
@@ -118,6 +121,13 @@ COPY alert.html /usr/local/bin/alert.html
 # Copy script to run app
 COPY service/run_python.sh /root/Desktop/run_python.sh
 
+# Create desktop shortcut for manual app launch
+RUN echo '[Desktop Entry]' > /root/Desktop/ip_status_app.desktop \
+    && echo 'Name=IP Status App' >> /root/Desktop/ip_status_app.desktop \
+    && echo 'Exec=python3 /usr/local/bin/ip_status_app.py' >> /root/Desktop/ip_status_app.desktop \
+    && echo 'Type=Application' >> /root/Desktop/ip_status_app.desktop \
+    && echo 'Terminal=true' >> /root/Desktop/ip_status_app.desktop \
+    && chmod +x /root/Desktop/ip_status_app.desktop
 
 # Add necessary capabilities for DNS manipulation
 CMD ["bash", "-c", "setcap 'cap_net_bind_service=+ep' /usr/sbin/named && /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf"]

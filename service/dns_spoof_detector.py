@@ -21,6 +21,7 @@ class DNSSpoofDetector:
         self.interface = interface
         self.process = None
         self.queue = queue.Queue()
+        self.filtered_queue = queue.Queue()
         self.stop_event = threading.Event()
         self.verbose_logs = verbose_logs_input
         self.info_site_html_path = "/usr/local/bin/alert.html"
@@ -258,9 +259,10 @@ class DNSSpoofDetector:
                     log += f"Found IP: {ip}\n"
                     if domain and ip:
                         log += f"Validation from API: {self.validate_ip(domain, ip)}\n"
-
+                
                     print(log)
-                    with open("dns_queries.log", "a") as f:
+                    self.filtered_queue.put(log)
+                    with open("/root/Desktop/dns_queries.log", "a") as f:
                         f.write(f"{log}\n")
             except queue.Empty:
                 continue
@@ -304,6 +306,12 @@ class DNSSpoofDetector:
             if self.process:
                 self.process.terminate()
 
+def get_logs(self):
+        """Retrieve logs from the queue."""
+        try:
+            return self.queue.get_nowait()  # Try to get a log without blocking
+        except queue.Empty:
+            return None  # Return None if no logs are available
 
 def main(verbose_logs_input):
     # Check if the script is running as root

@@ -21,7 +21,7 @@ http://localhost:8080/vnc.html
   
 4. Inside the container, run the following scripts from Desktop:
    
-    run the "setup_dns.sh" script - **this script will mock a dns spoofing attack** (this will change **wikipedia.org** domain to retrieve ip **7.7.7.7** - not valid)
+    run the **setup_dns.sh** script - **this script will mock a dns spoofing attack** (this will change **amazon.com** domain to retrieve ip **7.7.7.7** - not valid)
       ```
       ./setup_dns.sh
       ```
@@ -39,7 +39,8 @@ http://localhost:8080/vnc.html
 # Example run for the tool:
 (Watching in full screen is reccomanded)
 
-https://github.com/user-attachments/assets/7691eb76-dc84-425e-9352-93ba700bd1ee
+https://github.com/user-attachments/assets/dc46c121-6304-428a-bfb3-e7bd595551c1
+
 
 
 

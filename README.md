@@ -42,7 +42,8 @@ http://localhost:8080/vnc.html
 # Example run for the tool:
 (Watching in full screen is reccomanded)
 
-https://github.com/user-attachments/assets/dc46c121-6304-428a-bfb3-e7bd595551c1
+
+https://github.com/user-attachments/assets/fbe3cb32-767b-4392-b5e3-b635c54bb14b
 
 
 

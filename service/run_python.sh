@@ -1,1 +1,1 @@
-sudo python3 /usr/local/bin/dns-spoof-detector.py
+sudo python3 /usr/local/bin/DNSSpoofDetector.py

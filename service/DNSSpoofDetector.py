@@ -12,6 +12,7 @@ import time
 import argparse
 import webbrowser
 import time
+import socket
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -22,6 +23,7 @@ class DNSSpoofDetector:
         self.process = None
         self.queue = queue.Queue()
         self.filtered_queue = queue.Queue()
+        self.log_queue = queue.Queue()
         self.stop_event = threading.Event()
         self.verbose_logs = verbose_logs_input
         self.info_site_html_path = "/usr/local/bin/alert.html"
@@ -39,31 +41,9 @@ class DNSSpoofDetector:
     # Perform nslookup for the specified domain for ip adress from local DNS resolver
     def get_nslookup_address(self, domain):
         try:
-            if domain:
-                # Run the nslookup command for the specified domain
-                result = subprocess.run(['nslookup', domain], capture_output=True, text=True)
-                
-                # Check if the command succeeded
-                if result.returncode != 0:
-                    if (self.verbose_logs):
-                        print(f"nslookup failed with error: {result.stderr} for domain {domain}")
-                    return None
-
-                # Extract the actual resolved IP address (skip resolver address)
-                address = None
-                for line in result.stdout.splitlines():
-                    try:
-                        line = line.strip()
-                        if line.startswith('Address:') and '#' not in line:  # Exclude lines with '#'
-                            address = line.split(':')[-1].strip()  # Get the part after 'Address:'
-                            break
-                    except Exception as e:
-                        print(f"Could not parse adderss from nslookup, in line: {line} for domain {domain}")
-                        return None
-
-                return address
+            return socket.gethostbyname(domain)
         except Exception as e:
-            print(f"Error running nslookup: {e}")
+            print(f"Socket resolution error: {e}")
             return None
 
 
@@ -93,11 +73,13 @@ class DNSSpoofDetector:
     def parse_dns_query(self, line):
         try:
             # Extract domain from DNS query
-            domain_match = re.search(r"\b[\w.-]+\.(?:com|co\.il|org)\b", line)
+            domain_match = re.search(r"\b[\w.-]+\.(?:com|co\.il|org|net)\b", line)
             domain = domain_match.group(0) if domain_match else None
 
             # Extract IP address from DNS response
-            ip = self.get_nslookup_address(domain)
+            ip = False
+            if domain:
+                ip = self.get_nslookup_address(domain)
 
             if not domain:
                 domain = False
@@ -158,7 +140,7 @@ class DNSSpoofDetector:
             available_request_url.append(network_calc_request_url)
             available_request_url.append(IP_API_request_url)
 
-            valid = self.validate_against_apis(available_request_url, api_order_list, ip_from_nslookup, retries=3)
+            valid, ip_from_ip_api_list = self.validate_against_apis(available_request_url, api_order_list, ip_from_nslookup, retries=3)
 
             if valid:
                 self.trusted_domains[domain] = ip_from_nslookup
@@ -167,27 +149,21 @@ class DNSSpoofDetector:
             # ip isn't valid - check if the ip comes from cdn
             isp_from_nslookup =  self.make_request_with_retries(f"http://{IP_API_IP}/json/{ip_from_nslookup}").json()["isp"]
 
-            google_dns_request_url = f"https://{dns_google_IP}/resolve?name={domain}"
-            google_dns_response = self.make_request_with_retries(google_dns_request_url)
-            google_api_respone_ip = self.parse_response(google_dns_response, "google")
+            google_api_respone_ip = ip_from_ip_api_list[0]
             isp_from_google = self.make_request_with_retries(f"http://{IP_API_IP}/json/{google_api_respone_ip}").json()["isp"]
 
             if isp_from_nslookup == isp_from_google:
                 self.trusted_domains[domain] = ip_from_nslookup
                 return "VALID (isp match)"
-            
-            network_calc_request_url = f"https://{network_calc_IP}/api/dns/lookup/{domain}"
-            network_calc_response = self.make_request_with_retries(network_calc_request_url)
-            network_calc_response_ip = self.parse_response(network_calc_response, "network_calc")
+
+            network_calc_response_ip = ip_from_ip_api_list[1]
             isp_from_network_calc = self.make_request_with_retries(f"http://{IP_API_IP}/json/{network_calc_response_ip}").json()["isp"]
             if isp_from_nslookup == isp_from_network_calc:
                 self.trusted_domains[domain] = ip_from_nslookup
                 return "VALID (isp match)"
 
-            IP_API_request_url = f"http://{IP_API_IP}/json/{domain}"
-            IP_API_response = self.make_request_with_retries(IP_API_request_url)
-            IP_API_response_ip = self.parse_response(IP_API_response, "IP_API")
-
+ 
+            IP_API_response_ip = ip_from_ip_api_list[2]
             isp_from_ip_api = self.make_request_with_retries(f"http://{IP_API_IP}/json/{IP_API_response_ip}").json()["isp"]
             if isp_from_nslookup == isp_from_ip_api:
                 self.trusted_domains[domain] = ip_from_nslookup
@@ -202,10 +178,11 @@ class DNSSpoofDetector:
 
 
     # Validate the IP address from the DNS query against multiple APIs, performing cyclic retries to enhance performance
-    def validate_against_apis(self, available_request_url, api_order_list, ip_from_nslookup, retries=3) -> bool:
+    def validate_against_apis(self, available_request_url, api_order_list, ip_from_nslookup, retries=3):
         retries_for_apis = [0,0,0]
         request_sent = [False, False, False]
         url_index = 0
+        ip_from_api_list = [None] * 3
         # not all url request was fullfiled
         while False in request_sent:
             if not request_sent[url_index]: # current API still didn't send request
@@ -214,19 +191,17 @@ class DNSSpoofDetector:
                     response = requests.get(available_request_url[url_index], verify=False)
                     if response.status_code == 200:
                         ip_from_api = self.parse_response(response, api_order_list[url_index])
+                        ip_from_api_list[url_index] = ip_from_api
                         if ip_from_nslookup == ip_from_api:
-                            return True
+                            return True , None
                         else:
                             request_sent[url_index] = True
                     elif response.status_code != 429:                 
                         raise Exception(f"Error code {response.status_code} from request {available_request_url[url_index]}")
-
-                else:
-                    raise Exception("Failed to fetch data after retries.")
                 
             url_index = (url_index + 1) % len(available_request_url) # iterating over next request url
         
-        return False
+        return False, ip_from_api_list
 
 
     # Make a request with retries
@@ -244,7 +219,7 @@ class DNSSpoofDetector:
     def process_lines(self):
         while not self.stop_event.is_set():
             try:
-                line = self.queue.get(timeout=0.5)
+                line = self.queue.get(timeout=0.3)
                 if line:
                     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     # Parse the DNS query from the tcpdump line for domain name and ip address
@@ -257,17 +232,29 @@ class DNSSpoofDetector:
                     log += f"Raw line from tcpdump: {line.strip()}\n"
                     log += f"Found domain: {domain}\n"
                     log += f"Found IP: {ip}\n"
-                    if domain and ip:
-                        log += f"Validation from API: {self.validate_ip(domain, ip)}\n"
-                
-                    print(log)
+                    log += f"Validation from API: {self.validate_ip(domain, ip)}\n"
+
+                    if self.verbose_logs:
+                        print(log)
+                    self.log_queue.put(log)
                     self.filtered_queue.put(log)
-                    with open("/root/Desktop/dns_queries.log", "a") as f:
-                        f.write(f"{log}\n")
             except queue.Empty:
                 continue
 
+    def write_log_to_file(self):
+        log_batch = []
+        while not self.stop_event.is_set():
+            try:
+                log = self.log_queue.get(timeout=3)
+                log_batch.append(log)
 
+                if len(log_batch) >= 20:  # Write in batches of 10
+                    with open("/root/Desktop/dns_queries.log", "a") as f:
+                        f.writelines(log_batch)
+                    log_batch = []
+            except queue.Empty:
+                continue
+    
     # Start monitoring DNS queries
     def start_monitoring(self):
         try:
@@ -289,6 +276,8 @@ class DNSSpoofDetector:
 
             # start a new thread to process lines from tcpdump
             threading.Thread(target=self.process_lines, daemon=True).start()
+            # start a new thread to write logs to file
+            threading.Thread(target=self.write_log_to_file, daemon=True).start()
 
             print(f"Starting DNS monitoring on interface {self.interface}... with verbose logs: {self.verbose_logs}")
             print("Press Ctrl+C to stop monitoring\n")
@@ -305,6 +294,12 @@ class DNSSpoofDetector:
         finally:
             if self.process:
                 self.process.terminate()
+                
+def stop_monitoring(self):
+    self.stop_event.set()  # Signal all threads to stop
+    if self.process:
+        self.process.terminate()  # Terminate the subprocess
+    print("Monitoring stopped.")
 
 def get_logs(self):
         """Retrieve logs from the queue."""

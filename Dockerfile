@@ -109,11 +109,11 @@ RUN chmod +x /root/Desktop/firefox_telemetry_disable.sh
 
 
 # copy app
-COPY service/dns_spoof_detector.py /usr/local/bin/dns_spoof_detector.py
-RUN chmod +x /usr/local/bin/dns_spoof_detector.py
+COPY service/DNSSpoofDetector.py /usr/local/bin/DNSSpoofDetector.py
+RUN chmod +x /usr/local/bin/DNSSpoofDetector.py
 
 # Copy app2
-COPY service/ip_status_app.py /usr/local/bin/ip_status_app.py
+COPY service/IPStatusApp.py /usr/local/bin/IPStatusApp.py
 
 #copy slert site html:
 COPY alert.html /usr/local/bin/alert.html
@@ -121,13 +121,17 @@ COPY alert.html /usr/local/bin/alert.html
 # Copy script to run app
 COPY service/run_python.sh /root/Desktop/run_python.sh
 
+# Copy app icons
+COPY service/app_icon.png /usr/share/icons/app_icon.png
+COPY service/app_icon.ico /usr/share/icons/app_icon.ico
+
 # Create desktop shortcut for manual app launch
-RUN echo '[Desktop Entry]' > /root/Desktop/ip_status_app.desktop \
-    && echo 'Name=IP Status App' >> /root/Desktop/ip_status_app.desktop \
-    && echo 'Exec=python3 /usr/local/bin/ip_status_app.py' >> /root/Desktop/ip_status_app.desktop \
-    && echo 'Type=Application' >> /root/Desktop/ip_status_app.desktop \
-    && echo 'Terminal=true' >> /root/Desktop/ip_status_app.desktop \
-    && chmod +x /root/Desktop/ip_status_app.desktop
+RUN echo '[Desktop Entry]' > /root/Desktop/IPStatusApp.desktop \
+    && echo 'Name=DNS Spoof Detector' >> /root/Desktop/IPStatusApp.desktop \
+    && echo 'Exec=python3 /usr/local/bin/IPStatusApp.py' >> /root/Desktop/IPStatusApp.desktop \
+    && echo 'Type=Application' >> /root/Desktop/IPStatusApp.desktop \
+    && echo 'Icon=/usr/share/icons/app_icon.png' >> /root/Desktop/IPStatusApp.desktop \
+    && chmod +x /root/Desktop/IPStatusApp.desktop
 
 # Add necessary capabilities for DNS manipulation
 CMD ["bash", "-c", "setcap 'cap_net_bind_service=+ep' /usr/sbin/named && /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf"]

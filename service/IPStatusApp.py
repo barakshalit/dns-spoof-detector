@@ -1,7 +1,9 @@
+import subprocess
 import tkinter as tk
 import threading
 import queue
-from dns_spoof_detector import DNSSpoofDetector
+import webbrowser
+from DNSSpoofDetector import DNSSpoofDetector
 from tkinter import PhotoImage, messagebox
 import os  # To work with file paths
 
@@ -13,8 +15,9 @@ class DNSMonitorApp:
 
         # Set the icon for the window using a .png image
         try:
-            img = PhotoImage(file="appIcon.gif")  # Path to your PNG image
-            self.root.iconphoto(True, img)  # Set the icon for the window
+            icon_path = "/usr/share/icons/app_icon.png"
+            img = PhotoImage(file=icon_path)
+            self.root.iconphoto(True, img)
         except Exception as e:
             print(f"Error loading icon: {e}")
 
@@ -42,9 +45,17 @@ class DNSMonitorApp:
         self.status_label = tk.Label(self.root, text="Status: Monitoring DNS Queries", font=("Arial", 12), bg='black', fg='black')
         self.status_label.pack(pady=5)
 
-        # Add a button to open the log file
-        self.view_logs_button = tk.Button(self.root, text="View Logs", command=self.view_logs)
-        self.view_logs_button.pack(pady=5)
+        frame = tk.Frame(self.root,bg='black')
+        frame.pack(pady=5)
+
+        self.view_logs_button = tk.Button(frame, text="View Logs", command=self.view_logs)
+        self.view_logs_button.pack(side=tk.LEFT, padx=5)
+
+        self.open_log_button = tk.Button(frame, text="Open log file", command=self.open_log_file)
+        self.open_log_button.pack(side=tk.LEFT, padx=5)
+
+        self.stop_monitoring_button = tk.Button(frame, text="Stop monitoring", command=self.stop_monitoring)
+        self.stop_monitoring_button.pack(side=tk.LEFT, padx=5)
 
         # Start a separate thread for monitoring DNS
         self.monitoring_thread = threading.Thread(target=self.start_monitoring)
@@ -57,11 +68,19 @@ class DNSMonitorApp:
     def start_monitoring(self):
         self.detector.start_monitoring()
 
-    def save_log_to_file(self, log):
-        # Save the log to a file on the Desktop
-        log_file_path = os.path.expanduser("~/Desktop/dns_queries.log")  # Absolute path to Desktop
-        with open(log_file_path, "a") as log_file:
-            log_file.write(log + "\n")
+    def stop_monitoring(self):
+        self.filtered_queue = queue.Queue() # Clear the queue
+        self.detector.stop_monitoring()
+
+
+
+
+    def open_log_file(self):
+        try:
+            log_path = os.path.expanduser("~/Desktop/dns_queries.log")
+            webbrowser.open(f"file://{log_path}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open logs: {e}")
 
     def update_gui(self):
         try:
@@ -75,9 +94,6 @@ class DNSMonitorApp:
                     self.text_area.insert(tk.END, log + "\n", "red")  # Red color for INVALID logs
                 else:
                     self.text_area.insert(tk.END, log + "\n", "green")  # Green color for VALID logs
-
-                # Save the log to the text file
-                self.save_log_to_file(log)
 
                 self.text_area.yview(tk.END)  # Scroll to the bottom
                 self.root.update_idletasks()  # Update the window

@@ -32,6 +32,7 @@ http://localhost:8080/vnc.html
       
 5. The tool will now start to scan all the requests from the user machine to the web and will validate every one of them with several APIs.
 6. In a case of an invalid request, the tool log this, and will prompt an alert with instructions on how to deal with this kind of attacks:
+   
    ![image](https://github.com/user-attachments/assets/2a8690f5-490b-4c62-b602-75f27ad6e8bc)
 
 

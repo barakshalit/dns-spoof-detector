@@ -26,7 +26,7 @@ class DNSMonitorApp:
         self.root.title("DNS Spoof Detector")
         self.root.geometry("600x400")
 
-        # Set the background color of the window to blue
+        # Set the background color of the window to black
         self.root.configure(bg='black')
 
         # Create GUI components

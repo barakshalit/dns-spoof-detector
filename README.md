@@ -1,5 +1,11 @@
 # dns-spoof-detector
 
+## Tool objective:
+The DSN Spoof detector tool's main objective is to protect users from a DNS spoofing attack, in which the user’s machine local DNS was compromised and a domain name is now pointing to an IP address that leads to a malicious site made by the attacker.
+This kind of attack is causing the user to visit a completely different site then the one he intended to.
+By that, the user is vulnerable to several attacks and data theft that he is not aware of.
+
+
 ## Example run for the tool:
 (Watching in full screen is reccomanded)
 

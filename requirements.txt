@@ -1,7 +1,0 @@
-scapy
-dnspython
-PyQt5==5.15.9
-pandas
-flask
-psutil
-requests

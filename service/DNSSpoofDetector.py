@@ -30,7 +30,7 @@ class DNSSpoofDetector:
         self.trusted_domains = {}
         signal.signal(signal.SIGINT, self.signal_handler)
 
-
+    # Handle the SIGINT signal (Ctrl+C) to stop the monitoring
     def signal_handler(self, signum, frame):
         print("\nStopping DNS monitoring...")
         if self.process:
@@ -241,6 +241,8 @@ class DNSSpoofDetector:
             except queue.Empty:
                 continue
 
+
+    # Write logs to a file in batches
     def write_log_to_file(self):
         log_batch = []
         while not self.stop_event.is_set():
@@ -255,6 +257,7 @@ class DNSSpoofDetector:
             except queue.Empty:
                 continue
     
+
     # Start monitoring DNS queries
     def start_monitoring(self):
         try:
@@ -294,19 +297,14 @@ class DNSSpoofDetector:
         finally:
             if self.process:
                 self.process.terminate()
-                
+
+# Stop monitoring DNS queries                
 def stop_monitoring(self):
     self.stop_event.set()  # Signal all threads to stop
     if self.process:
         self.process.terminate()  # Terminate the subprocess
     print("Monitoring stopped.")
 
-def get_logs(self):
-        """Retrieve logs from the queue."""
-        try:
-            return self.queue.get_nowait()  # Try to get a log without blocking
-        except queue.Empty:
-            return None  # Return None if no logs are available
 
 def main(verbose_logs_input):
     # Check if the script is running as root
@@ -315,6 +313,7 @@ def main(verbose_logs_input):
         print("Please run with sudo: sudo python3 dns_monitor.py")
         sys.exit(1)
 
+    # Start the DNS monitoring
     detector = DNSSpoofDetector(verbose_logs_input)
     detector.start_monitoring()
 
